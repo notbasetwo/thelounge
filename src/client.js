@@ -240,7 +240,7 @@ Client.prototype.connect = function (args, isStartup = false) {
 		password: String(args.password || ""),
 		nick: String(args.nick || ""),
 		username: String(args.username || ""),
-		realname: String(args.realname || ""),
+		realname: String(args.username || ""),
 		sasl: String(args.sasl || ""),
 		saslAccount: String(args.saslAccount || ""),
 		saslPassword: String(args.saslPassword || ""),
