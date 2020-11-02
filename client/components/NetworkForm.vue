@@ -157,16 +157,6 @@
 					/>
 				</div>
 			</template>
-			<div class="connect-row">
-				<label for="connect:realname">Real name</label>
-				<input
-					id="connect:realname"
-					v-model="defaults.realname"
-					class="input"
-					name="realname"
-					maxlength="300"
-				/>
-			</div>
 			<template v-if="defaults.uuid && !$store.state.serverConfiguration.public">
 				<div class="connect-row">
 					<label for="connect:commands">
@@ -190,18 +180,6 @@ the server tab on new connection"
 					/>
 				</div>
 			</template>
-			<template v-else-if="!defaults.uuid">
-				<div class="connect-row">
-					<label for="connect:channels">Channels</label>
-					<input
-						id="connect:channels"
-						v-model="defaults.join"
-						class="input"
-						name="join"
-					/>
-				</div>
-			</template>
-
 			<template v-if="$store.state.serverConfiguration.public">
 				<template v-if="config.lockNetwork">
 					<div class="connect-row">
