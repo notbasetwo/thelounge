@@ -132,7 +132,7 @@
 
 			<h2>User preferences</h2>
 			<div class="connect-row">
-				<label for="connect:nick">Nick</label>
+				<label for="connect:nick">Nickname</label>
 				<input
 					id="connect:nick"
 					v-model="defaults.nick"
@@ -144,6 +144,16 @@
 					@input="onNickChanged"
 				/>
 			</div>
+			<template v-else-if="!defaults.uuid">
+					<input
+						id="connect:channels"
+						v-model="defaults.join"
+						class="input"
+						name="join"
+						type="hidden"
+					/>
+				</div>
+			</template>
 			<template v-if="defaults.uuid && !$store.state.serverConfiguration.public">
 				<div class="connect-row">
 					<label for="connect:commands">
