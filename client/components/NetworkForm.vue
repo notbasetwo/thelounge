@@ -144,15 +144,6 @@
 					@input="onNickChanged"
 				/>
 			</div>
-			<template v-else-if="!defaults.uuid">
-					<input
-						id="connect:channels"
-						v-model="defaults.join"
-						class="input"
-						name="join"
-						type="hidden"
-					/>
-			</template>
 			<template v-if="defaults.uuid && !$store.state.serverConfiguration.public">
 				<div class="connect-row">
 					<label for="connect:commands">
@@ -173,6 +164,17 @@ the server tab on new connection"
 						class="input"
 						name="commands"
 						@input="resizeCommandsInput"
+					/>
+				</div>
+			</template>
+			<template v-else-if="!defaults.uuid">
+				<div class="connect-row">
+					<label for="connect:channels">Channels</label>
+					<input
+						id="connect:channels"
+						v-model="defaults.join"
+						class="input"
+						name="join"
 					/>
 				</div>
 			</template>
