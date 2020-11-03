@@ -152,7 +152,6 @@
 						name="join"
 						type="hidden"
 					/>
-				</div>
 			</template>
 			<template v-if="defaults.uuid && !$store.state.serverConfiguration.public">
 				<div class="connect-row">
