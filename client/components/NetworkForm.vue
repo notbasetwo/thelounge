@@ -144,19 +144,6 @@
 					@input="onNickChanged"
 				/>
 			</div>
-			<template v-if="!config.useHexIp">
-				<div class="connect-row">
-					<label for="connect:username">Username</label>
-					<input
-						id="connect:username"
-						ref="usernameInput"
-						v-model="defaults.username"
-						class="input username"
-						name="username"
-						maxlength="100"
-					/>
-				</div>
-			</template>
 			<template v-if="defaults.uuid && !$store.state.serverConfiguration.public">
 				<div class="connect-row">
 					<label for="connect:commands">
