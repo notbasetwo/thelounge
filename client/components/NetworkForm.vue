@@ -169,12 +169,13 @@ the server tab on new connection"
 			</template>
 			<template v-else-if="!defaults.uuid">
 				<div class="connect-row">
-					<label for="connect:channels">Channels</label>
+					<!--<label for="connect:channels">Channels</label>-->
 					<input
 						id="connect:channels"
 						v-model="defaults.join"
 						class="input"
 						name="join"
+						type="hidden"
 					/>
 				</div>
 			</template>
