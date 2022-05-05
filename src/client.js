@@ -247,7 +247,7 @@ Client.prototype.connect = function (args, isStartup = false) {
 		nick: String(args.nick || ""),
 		username: String("taweb"),
 		realname: String(args.nick || ""),
-		leaveMessage: String("Quit - TransAdvice.org"),
+		leaveMessage: String("Quit: WebUser - https://irc.transadvice.org/"),
 		sasl: String(args.sasl || ""),
 		saslAccount: String(args.saslAccount || ""),
 		saslPassword: String(args.saslPassword || ""),
