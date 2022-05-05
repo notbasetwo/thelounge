@@ -5,7 +5,7 @@ const fs = require("fs");
 const crypto = require("crypto");
 const {md, pki} = require("node-forge");
 const log = require("../log");
-const Helper = require("../helper");
+const Config = require("../config");
 
 module.exports = {
 	get,
@@ -13,11 +13,11 @@ module.exports = {
 };
 
 function get(uuid) {
-	if (Helper.config.public) {
+	if (Config.values.public) {
 		return null;
 	}
 
-	const folderPath = Helper.getClientCertificatesPath();
+	const folderPath = Config.getClientCertificatesPath();
 	const paths = getPaths(folderPath, uuid);
 
 	if (!fs.existsSync(paths.privateKeyPath) || !fs.existsSync(paths.certificatePath)) {
@@ -30,18 +30,18 @@ function get(uuid) {
 			certificate: fs.readFileSync(paths.certificatePath, "utf-8"),
 		};
 	} catch (e) {
-		log.error("Unable to remove certificate", e);
+		log.error("Unable to get certificate", e);
 	}
 
 	return null;
 }
 
 function remove(uuid) {
-	if (Helper.config.public) {
+	if (Config.values.public) {
 		return null;
 	}
 
-	const paths = getPaths(Helper.getClientCertificatesPath(), uuid);
+	const paths = getPaths(Config.getClientCertificatesPath(), uuid);
 
 	try {
 		if (fs.existsSync(paths.privateKeyPath)) {

@@ -150,6 +150,30 @@ module.exports = {
 	// This value is set to `2048` kilobytes by default.
 	prefetchMaxImageSize: 2048,
 
+	// ### prefetchMaxSearchSize
+	//
+	// This value sets the maximum response size allowed when finding the Open
+	// Graph tags for link previews. The entire response is temporarily stored
+	// in memory and for some sites like YouTube this can easily exceed 300
+	// kilobytes.
+	//
+	// This value is set to `50` kilobytes by default.
+	prefetchMaxSearchSize: 50,
+
+	// ### `prefetchTimeout`
+	//
+	// When `prefetch` is enabled, this value sets the number of milliseconds
+	// before The Lounge gives up attempting to fetch a link. This can be useful
+	// if you've increased the `prefetchMaxImageSize`.
+	//
+	// Take caution, however, that an inordinately large value may lead to
+	// performance issues or even a denial of service, since The Lounge will not
+	// be able to clean up outgoing connections as quickly. Usually the default
+	// value is appropriate, so only change it if necessary.
+	//
+	// This value is set to `5000` milliseconds by default.
+	prefetchTimeout: 5000,
+
 	// ### `fileUpload`
 	//
 	// Allow uploading files to the server hosting The Lounge.
@@ -166,7 +190,7 @@ module.exports = {
 	//   this limit will be prompted with an error message in their browser. A value of
 	//   `-1` disables the file size limit and allows files of any size. **Use at
 	//   your own risk.** This value is set to `10240` kilobytes by default.
-	// - `baseUrl`: If you want change the URL where uploaded files are accessed,
+	// - `baseUrl`: If you want to change the URL where uploaded files are accessed,
 	//   you can set this option to `"https://example.com/folder/"` and the final URL
 	//   would look like `"https://example.com/folder/aabbccddeeff1234/name.png"`.
 	//   If you use this option, you must have a reverse proxy configured,
@@ -218,15 +242,16 @@ module.exports = {
 	//   numbers from 0 to 9. For example, `Guest%%%` may become `Guest123`.
 	// - `username`: User name.
 	// - `realname`: Real name.
+	// - `leaveMessage`: Network specific leave message (overrides global leaveMessage)
 	// - `join`: Comma-separated list of channels to auto-join once connected.
 	//
 	// This value is set to connect to the official channel of The Lounge on
-	// Freenode by default:
+	// Libera.Chat by default:
 	//
 	// ```js
 	// defaults: {
-	//   name: "Freenode",
-	//   host: "chat.freenode.net",
+	//   name: "Libera.Chat",
+	//   host: "irc.libera.chat",
 	//   port: 6697,
 	//   password: "",
 	//   tls: true,
@@ -238,8 +263,8 @@ module.exports = {
 	// }
 	// ```
 	defaults: {
-		name: "Freenode",
-		host: "chat.freenode.net",
+		name: "Libera.Chat",
+		host: "irc.libera.chat",
 		port: 6697,
 		password: "",
 		tls: true,
@@ -248,6 +273,7 @@ module.exports = {
 		username: "thelounge",
 		realname: "The Lounge User",
 		join: "#thelounge",
+		leaveMessage: "",
 	},
 
 	// ### `lockNetwork`
@@ -372,7 +398,7 @@ module.exports = {
 	//
 	// The search query takes a couple of parameters in `searchDN`:
 	//
-	// - a base DN `searchDN/base`. Only children nodes of this DN will be likely
+	// - a base DN `searchDN/base`. Only children nodes of this DN will likely
 	//   be returned;
 	// - a search scope `searchDN/scope` (see LDAP documentation);
 	// - the query itself, built as `(&(<primaryKey>=<username>) <filter>)`

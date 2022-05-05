@@ -5,6 +5,7 @@ const log = require("../../log");
 const Msg = require("../../models/msg");
 const Chan = require("../../models/chan");
 const Helper = require("../../helper");
+const Config = require("../../config");
 
 module.exports = function (irc, network) {
 	const client = this;
@@ -63,10 +64,9 @@ module.exports = function (irc, network) {
 	});
 
 	irc.on("socket connected", function () {
-		network.prefixLookup = {};
-		irc.network.options.PREFIX.forEach(function (mode) {
-			network.prefixLookup[mode.mode] = mode.symbol;
-		});
+		if (irc.network.options.PREFIX) {
+			network.serverOptions.PREFIX.update(irc.network.options.PREFIX);
+		}
 
 		network.channels[0].pushMessage(
 			client,
@@ -83,8 +83,7 @@ module.exports = function (irc, network) {
 		network.channels[0].pushMessage(
 			client,
 			new Msg({
-				text:
-					"Disconnected from the network, and will not reconnect. Use /connect to reconnect again.",
+				text: "Disconnected from the network, and will not reconnect. Use /connect to reconnect again.",
 			}),
 			true
 		);
@@ -95,7 +94,7 @@ module.exports = function (irc, network) {
 	irc.on("raw socket connected", function (socket) {
 		let ident = client.name || network.username;
 
-		if (Helper.config.useHexIp) {
+		if (Config.values.useHexIp) {
 			ident = Helper.ip2hex(client.config.browser.ip);
 		}
 
@@ -140,7 +139,7 @@ module.exports = function (irc, network) {
 		sendStatus();
 	});
 
-	if (Helper.config.debug.ircFramework) {
+	if (Config.values.debug.ircFramework) {
 		irc.on("debug", function (message) {
 			log.debug(
 				`[${client.name} (${client.id}) on ${network.name} (${network.uuid}]`,
@@ -149,7 +148,7 @@ module.exports = function (irc, network) {
 		});
 	}
 
-	if (Helper.config.debug.raw) {
+	if (Config.values.debug.raw) {
 		irc.on("raw", function (message) {
 			network.channels[0].pushMessage(
 				client,
@@ -197,18 +196,10 @@ module.exports = function (irc, network) {
 	});
 
 	irc.on("server options", function (data) {
-		network.prefixLookup = {};
-
-		data.options.PREFIX.forEach((mode) => {
-			network.prefixLookup[mode.mode] = mode.symbol;
-		});
+		network.serverOptions.PREFIX.update(data.options.PREFIX);
 
 		if (data.options.CHANTYPES) {
 			network.serverOptions.CHANTYPES = data.options.CHANTYPES;
-		}
-
-		if (network.serverOptions.PREFIX) {
-			network.serverOptions.PREFIX = data.options.PREFIX.map((p) => p.symbol);
 		}
 
 		network.serverOptions.NETWORK = data.options.NETWORK;

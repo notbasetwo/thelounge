@@ -5,7 +5,9 @@ const {v4: uuidv4} = require("uuid");
 const IrcFramework = require("irc-framework");
 const Chan = require("./chan");
 const Msg = require("./msg");
+const Prefix = require("./prefix");
 const Helper = require("../helper");
+const Config = require("../config");
 const STSPolicies = require("../plugins/sts");
 const ClientCertificate = require("../plugins/clientCertificate");
 
@@ -35,6 +37,7 @@ function Network(attr) {
 		commands: [],
 		username: "",
 		realname: "",
+		leaveMessage: "",
 		sasl: "",
 		saslAccount: "",
 		saslPassword: "",
@@ -42,9 +45,21 @@ function Network(attr) {
 		irc: null,
 		serverOptions: {
 			CHANTYPES: ["#", "&"],
-			PREFIX: ["!", "@", "%", "+"],
+			PREFIX: new Prefix([
+				{symbol: "!", mode: "Y"},
+				{symbol: "@", mode: "o"},
+				{symbol: "%", mode: "h"},
+				{symbol: "+", mode: "v"},
+			]),
 			NETWORK: "",
 		},
+
+		proxyHost: "",
+		proxyPort: 1080,
+		proxyUsername: "",
+		proxyPassword: "",
+		proxyEnabled: false,
+
 		chanCache: [],
 		ignoreList: [],
 		keepNick: null,
@@ -62,6 +77,11 @@ function Network(attr) {
 		new Chan({
 			name: this.name,
 			type: Chan.Type.LOBBY,
+			// The lobby only starts as muted if every channel (unless it's special) is muted.
+			// This is A) easier to implement and B) stops some confusion on startup.
+			muted:
+				this.channels.length >= 1 &&
+				this.channels.every((chan) => chan.muted || chan.type === Chan.Type.SPECIAL),
 		})
 	);
 }
@@ -73,7 +93,7 @@ Network.prototype.validate = function (client) {
 	// Remove new lines and limit length
 	const cleanString = (str) => str.replace(/[\x00\r\n]/g, "").substring(0, 300);
 
-	this.setNick(cleanNick(String(this.nick || Helper.getDefaultNick())));
+	this.setNick(cleanNick(String(this.nick || Config.getDefaultNick())));
 
 	if (!this.username) {
 		// If username is empty, make one from the provided nick
@@ -82,11 +102,29 @@ Network.prototype.validate = function (client) {
 
 	this.username = cleanString(this.username) || "thelounge";
 	this.realname = cleanString(this.realname) || "The Lounge User";
+	this.leaveMessage = cleanString(this.leaveMessage);
 	this.password = cleanString(this.password);
 	this.host = cleanString(this.host).toLowerCase();
 	this.name = cleanString(this.name);
 	this.saslAccount = cleanString(this.saslAccount);
 	this.saslPassword = cleanString(this.saslPassword);
+
+	this.proxyHost = cleanString(this.proxyHost);
+	this.proxyPort = this.proxyPort || 1080;
+	this.proxyUsername = cleanString(this.proxyUsername);
+	this.proxyPassword = cleanString(this.proxyPassword);
+	this.proxyEnabled = !!this.proxyEnabled;
+
+	const error = function (network, text) {
+		network.channels[0].pushMessage(
+			client,
+			new Msg({
+				type: Msg.Type.ERROR,
+				text: text,
+			}),
+			true
+		);
+	};
 
 	if (!this.port) {
 		this.port = this.tls ? 6697 : 6667;
@@ -96,65 +134,41 @@ Network.prototype.validate = function (client) {
 		this.sasl = "";
 	}
 
-	if (!this.tls) {
-		ClientCertificate.remove(this.uuid);
-	}
-
-	if (Helper.config.lockNetwork) {
+	if (Config.values.lockNetwork) {
 		// This check is needed to prevent invalid user configurations
 		if (
-			!Helper.config.public &&
+			!Config.values.public &&
 			this.host &&
 			this.host.length > 0 &&
-			this.host !== Helper.config.defaults.host
+			this.host !== Config.values.defaults.host
 		) {
-			this.channels[0].pushMessage(
-				client,
-				new Msg({
-					type: Msg.Type.ERROR,
-					text: "Hostname you specified is not allowed.",
-				}),
-				true
-			);
-
+			error(this, `The hostname you specified (${this.host}) is not allowed.`);
 			return false;
 		}
 
-		if (Helper.config.public) {
-			this.name = Helper.config.defaults.name;
+		if (Config.values.public) {
+			this.name = Config.values.defaults.name;
 			// Sync lobby channel name
-			this.channels[0].name = Helper.config.defaults.name;
+			this.channels[0].name = Config.values.defaults.name;
 		}
 
-		this.host = Helper.config.defaults.host;
-		this.port = Helper.config.defaults.port;
-		this.tls = Helper.config.defaults.tls;
-		this.rejectUnauthorized = Helper.config.defaults.rejectUnauthorized;
+		this.host = Config.values.defaults.host;
+		this.port = Config.values.defaults.port;
+		this.tls = Config.values.defaults.tls;
+		this.rejectUnauthorized = Config.values.defaults.rejectUnauthorized;
 	}
 
 	if (this.host.length === 0) {
-		this.channels[0].pushMessage(
-			client,
-			new Msg({
-				type: Msg.Type.ERROR,
-				text: "You must specify a hostname to connect.",
-			}),
-			true
-		);
-
+		error(this, "You must specify a hostname to connect.");
 		return false;
 	}
 
 	const stsPolicy = STSPolicies.get(this.host);
 
 	if (stsPolicy && !this.tls) {
-		this.channels[0].pushMessage(
-			client,
-			new Msg({
-				type: Msg.Type.ERROR,
-				text: `${this.host} has an active strict transport security policy, will connect to port ${stsPolicy.port} over a secure connection.`,
-			}),
-			true
+		error(
+			this,
+			`${this.host} has an active strict transport security policy, will connect to port ${stsPolicy.port} over a secure connection.`
 		);
 
 		this.port = stsPolicy.port;
@@ -168,7 +182,7 @@ Network.prototype.validate = function (client) {
 Network.prototype.createIrcFramework = function (client) {
 	this.irc = new IrcFramework.Client({
 		version: false, // We handle it ourselves
-		outgoing_addr: Helper.config.bind,
+		outgoing_addr: Config.values.bind,
 		enable_chghost: true,
 		enable_echomessage: true,
 		enable_setname: true,
@@ -183,13 +197,8 @@ Network.prototype.createIrcFramework = function (client) {
 
 	this.irc.requestCap([
 		"znc.in/self-message", // Legacy echo-message for ZNC
+		"znc.in/playback", // See http://wiki.znc.in/Playback
 	]);
-
-	// Request only new messages from ZNC if we have sqlite logging enabled
-	// See http://wiki.znc.in/Playback
-	if (client.config.log && client.messageStorage.find((s) => s.canProvideMessages())) {
-		this.irc.requestCap("znc.in/playback");
-	}
 };
 
 Network.prototype.setIrcFrameworkOptions = function (client) {
@@ -197,15 +206,25 @@ Network.prototype.setIrcFrameworkOptions = function (client) {
 	this.irc.options.port = this.port;
 	this.irc.options.password = this.password;
 	this.irc.options.nick = this.nick;
-	this.irc.options.username = Helper.config.useHexIp
+	this.irc.options.username = Config.values.useHexIp
 		? Helper.ip2hex(client.config.browser.ip)
 		: this.username;
 	this.irc.options.gecos = this.realname;
 	this.irc.options.tls = this.tls;
 	this.irc.options.rejectUnauthorized = this.rejectUnauthorized;
 	this.irc.options.webirc = this.createWebIrc(client);
+	this.irc.options.client_certificate = null;
 
-	this.irc.options.client_certificate = this.tls ? ClientCertificate.get(this.uuid) : null;
+	if (this.proxyEnabled) {
+		this.irc.options.socks = {
+			host: this.proxyHost,
+			port: this.proxyPort,
+			user: this.proxyUsername,
+			pass: this.proxyPassword,
+		};
+	} else {
+		delete this.irc.options.socks;
+	}
 
 	if (!this.sasl) {
 		delete this.irc.options.sasl_mechanism;
@@ -213,6 +232,7 @@ Network.prototype.setIrcFrameworkOptions = function (client) {
 	} else if (this.sasl === "external") {
 		this.irc.options.sasl_mechanism = "EXTERNAL";
 		this.irc.options.account = {};
+		this.irc.options.client_certificate = ClientCertificate.get(this.uuid);
 	} else if (this.sasl === "plain") {
 		delete this.irc.options.sasl_mechanism;
 		this.irc.options.account = {
@@ -224,14 +244,14 @@ Network.prototype.setIrcFrameworkOptions = function (client) {
 
 Network.prototype.createWebIrc = function (client) {
 	if (
-		!Helper.config.webirc ||
-		!Object.prototype.hasOwnProperty.call(Helper.config.webirc, this.host)
+		!Config.values.webirc ||
+		!Object.prototype.hasOwnProperty.call(Config.values.webirc, this.host)
 	) {
 		return null;
 	}
 
 	const webircObject = {
-		password: Helper.config.webirc[this.host],
+		password: Config.values.webirc[this.host],
 		username: "thelounge",
 		address: client.config.browser.ip,
 		hostname: client.config.browser.hostname,
@@ -244,9 +264,9 @@ Network.prototype.createWebIrc = function (client) {
 		};
 	}
 
-	if (typeof Helper.config.webirc[this.host] === "function") {
+	if (typeof Config.values.webirc[this.host] === "function") {
 		webircObject.password = null;
-		return Helper.config.webirc[this.host](webircObject, this);
+		return Config.values.webirc[this.host](webircObject, this);
 	}
 
 	return webircObject;
@@ -267,9 +287,16 @@ Network.prototype.edit = function (client, args) {
 	this.password = String(args.password || "");
 	this.username = String(args.username || "");
 	this.realname = String(args.realname || "");
+	this.leaveMessage = String(args.leaveMessage || "");
 	this.sasl = String(args.sasl || "");
 	this.saslAccount = String(args.saslAccount || "");
 	this.saslPassword = String(args.saslPassword || "");
+
+	this.proxyHost = String(args.proxyHost || "");
+	this.proxyPort = parseInt(args.proxyPort, 10);
+	this.proxyUsername = String(args.proxyUsername || "");
+	this.proxyPassword = String(args.proxyPassword || "");
+	this.proxyEnabled = !!args.proxyEnabled;
 
 	// Split commands into an array
 	this.commands = String(args.commands || "")
@@ -436,7 +463,7 @@ Network.prototype.quit = function (quitMessage) {
 	// https://ircv3.net/specs/extensions/sts#rescheduling-expiry-on-disconnect
 	STSPolicies.refreshExpiration(this.host);
 
-	this.irc.quit(quitMessage || Helper.config.leaveMessage);
+	this.irc.quit(quitMessage || this.leaveMessage || Config.values.leaveMessage);
 };
 
 Network.prototype.exportForEdit = function () {
@@ -447,13 +474,20 @@ Network.prototype.exportForEdit = function () {
 		"password",
 		"username",
 		"realname",
+		"leaveMessage",
 		"sasl",
 		"saslAccount",
 		"saslPassword",
 		"commands",
+
+		"proxyEnabled",
+		"proxyHost",
+		"proxyPort",
+		"proxyUsername",
+		"proxyPassword",
 	];
 
-	if (!Helper.config.lockNetwork) {
+	if (!Config.values.lockNetwork) {
 		fieldsToReturn.push("host");
 		fieldsToReturn.push("port");
 		fieldsToReturn.push("tls");
@@ -481,11 +515,18 @@ Network.prototype.export = function () {
 		"password",
 		"username",
 		"realname",
+		"leaveMessage",
 		"sasl",
 		"saslAccount",
 		"saslPassword",
 		"commands",
 		"ignoreList",
+
+		"proxyHost",
+		"proxyPort",
+		"proxyUsername",
+		"proxyEnabled",
+		"proxyPassword",
 	]);
 
 	network.channels = this.channels
@@ -493,7 +534,7 @@ Network.prototype.export = function () {
 			return channel.type === Chan.Type.CHANNEL || channel.type === Chan.Type.QUERY;
 		})
 		.map(function (chan) {
-			const keys = ["name"];
+			const keys = ["name", "muted"];
 
 			if (chan.type === Chan.Type.CHANNEL) {
 				keys.push("key");

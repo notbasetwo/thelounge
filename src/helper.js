@@ -2,47 +2,23 @@
 
 const pkg = require("../package.json");
 const _ = require("lodash");
-const log = require("./log");
 const path = require("path");
 const os = require("os");
 const fs = require("fs");
 const net = require("net");
 const bcrypt = require("bcryptjs");
-const colors = require("chalk");
 const crypto = require("crypto");
 
-let homePath;
-let configPath;
-let usersPath;
-let storagePath;
-let packagesPath;
-let fileUploadPath;
-let userLogsPath;
-let clientCertificatesPath;
-
 const Helper = {
-	config: null,
 	expandHome,
-	getHomePath,
-	getPackagesPath,
-	getPackageModulePath,
-	getStoragePath,
-	getConfigPath,
-	getFileUploadPath,
-	getUsersPath,
-	getUserConfigPath,
-	getUserLogsPath,
-	getClientCertificatesPath,
-	setHome,
 	getVersion,
 	getVersionCacheBust,
 	getVersionNumber,
 	getGitCommit,
 	ip2hex,
-	mergeConfig,
-	getDefaultNick,
 	parseHostmask,
 	compareHostmask,
+	compareWithWildcard,
 
 	password: {
 		hash: passwordHash,
@@ -52,8 +28,6 @@ const Helper = {
 };
 
 module.exports = Helper;
-
-Helper.config = require(path.resolve(path.join(__dirname, "..", "defaults", "config.js")));
 
 function getVersion() {
 	const gitCommit = getGitCommit();
@@ -72,7 +46,7 @@ function getGitCommit() {
 		return _gitCommit;
 	}
 
-	if (!fs.existsSync(path.resolve(__dirname, "..", ".git", "HEAD"))) {
+	if (!fs.existsSync(path.resolve(__dirname, "..", ".git"))) {
 		_gitCommit = null;
 		return null;
 	}
@@ -97,106 +71,6 @@ function getVersionCacheBust() {
 	const hash = crypto.createHash("sha256").update(Helper.getVersion()).digest("hex");
 
 	return hash.substring(0, 10);
-}
-
-function setHome(newPath) {
-	homePath = expandHome(newPath);
-	configPath = path.join(homePath, "config.js");
-	usersPath = path.join(homePath, "users");
-	storagePath = path.join(homePath, "storage");
-	fileUploadPath = path.join(homePath, "uploads");
-	packagesPath = path.join(homePath, "packages");
-	userLogsPath = path.join(homePath, "logs");
-	clientCertificatesPath = path.join(homePath, "certificates");
-
-	// Reload config from new home location
-	if (fs.existsSync(configPath)) {
-		const userConfig = require(configPath);
-
-		if (_.isEmpty(userConfig)) {
-			log.warn(
-				`The file located at ${colors.green(
-					configPath
-				)} does not appear to expose anything.`
-			);
-			log.warn(
-				`Make sure it is non-empty and the configuration is exported using ${colors.bold(
-					"module.exports = { ... }"
-				)}.`
-			);
-			log.warn("Using default configuration...");
-		}
-
-		mergeConfig(this.config, userConfig);
-	}
-
-	if (this.config.fileUpload.baseUrl) {
-		try {
-			new URL("test/file.png", this.config.fileUpload.baseUrl);
-		} catch (e) {
-			this.config.fileUpload.baseUrl = null;
-
-			log.warn(`The ${colors.bold("fileUpload.baseUrl")} you specified is invalid: ${e}`);
-		}
-	}
-
-	const manifestPath = path.resolve(
-		path.join(__dirname, "..", "public", "thelounge.webmanifest")
-	);
-
-	// Check if manifest exists, if not, the app most likely was not built
-	if (!fs.existsSync(manifestPath)) {
-		log.error(
-			`The client application was not built. Run ${colors.bold(
-				"NODE_ENV=production yarn build"
-			)} to resolve this.`
-		);
-		process.exit(1);
-	}
-
-	// Load theme color from the web manifest
-	const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-	this.config.themeColor = manifest.theme_color;
-}
-
-function getHomePath() {
-	return homePath;
-}
-
-function getConfigPath() {
-	return configPath;
-}
-
-function getFileUploadPath() {
-	return fileUploadPath;
-}
-
-function getUsersPath() {
-	return usersPath;
-}
-
-function getUserConfigPath(name) {
-	return path.join(usersPath, name + ".json");
-}
-
-function getUserLogsPath() {
-	return userLogsPath;
-}
-
-function getClientCertificatesPath() {
-	return clientCertificatesPath;
-}
-
-function getStoragePath() {
-	return storagePath;
-}
-
-function getPackagesPath() {
-	return packagesPath;
-}
-
-function getPackageModulePath(packageName) {
-	return path.join(Helper.getPackagesPath(), "node_modules", packageName);
 }
 
 function ip2hex(address) {
@@ -242,40 +116,6 @@ function passwordCompare(password, expected) {
 	return bcrypt.compare(password, expected);
 }
 
-function getDefaultNick() {
-	if (!this.config.defaults.nick) {
-		return "thelounge";
-	}
-
-	return this.config.defaults.nick.replace(/%/g, () => Math.floor(Math.random() * 10));
-}
-
-function mergeConfig(oldConfig, newConfig) {
-	for (const key in newConfig) {
-		if (!Object.prototype.hasOwnProperty.call(oldConfig, key)) {
-			log.warn(`Unknown key "${colors.bold(key)}", please verify your config.`);
-		}
-	}
-
-	return _.mergeWith(oldConfig, newConfig, (objValue, srcValue, key) => {
-		// Do not override config variables if the type is incorrect (e.g. object changed into a string)
-		if (
-			typeof objValue !== "undefined" &&
-			objValue !== null &&
-			typeof objValue !== typeof srcValue
-		) {
-			log.warn(`Incorrect type for "${colors.bold(key)}", please verify your config.`);
-
-			return objValue;
-		}
-
-		// For arrays, simply override the value with user provided one.
-		if (_.isArray(objValue)) {
-			return srcValue;
-		}
-	});
-}
-
 function parseHostmask(hostmask) {
 	let nick = "";
 	let ident = "*";
@@ -314,8 +154,27 @@ function parseHostmask(hostmask) {
 
 function compareHostmask(a, b) {
 	return (
-		(a.nick.toLowerCase() === b.nick.toLowerCase() || a.nick === "*") &&
-		(a.ident.toLowerCase() === b.ident.toLowerCase() || a.ident === "*") &&
-		(a.hostname.toLowerCase() === b.hostname.toLowerCase() || a.hostname === "*")
+		compareWithWildcard(a.nick, b.nick) &&
+		compareWithWildcard(a.ident, b.ident) &&
+		compareWithWildcard(a.hostname, b.hostname)
 	);
+}
+
+function compareWithWildcard(a, b) {
+	// we allow '*' and '?' wildcards in our comparison.
+	// this is mostly aligned with https://modern.ircdocs.horse/#wildcard-expressions
+	// but we do not support the escaping. The ABNF does not seem to be clear as to
+	// how to escape the escape char '\', which is valid in a nick,
+	// whereas the wildcards tend not to be (as per RFC1459).
+
+	// The "*" wildcard is ".*" in regex, "?" is "."
+	// so we tokenize and join with the proper char back together,
+	// escaping any other regex modifier
+	const wildmany_split = a.split("*").map((sub) => {
+		const wildone_split = sub.split("?").map((p) => _.escapeRegExp(p));
+		return wildone_split.join(".");
+	});
+	const user_regex = wildmany_split.join(".*");
+	const re = new RegExp(`^${user_regex}$`, "i"); // case insensitive
+	return re.test(b);
 }

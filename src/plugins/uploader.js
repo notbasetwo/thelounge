@@ -1,7 +1,7 @@
 "use strict";
 
-const Helper = require("../helper");
-const busboy = require("busboy");
+const Config = require("../config");
+const busboy = require("@fastify/busboy");
 const {v4: uuidv4} = require("uuid");
 const path = require("path");
 const fs = require("fs");
@@ -10,26 +10,30 @@ const readChunk = require("read-chunk");
 const crypto = require("crypto");
 const isUtf8 = require("is-utf8");
 const log = require("../log");
+const contentDisposition = require("content-disposition");
 
-// List of allowed mime types that can be rendered in browser
-// without forcing it to be downloaded
-const inlineContentDispositionTypes = [
-	"application/ogg",
-	"audio/midi",
-	"audio/mpeg",
-	"audio/ogg",
-	"audio/vnd.wave",
-	"image/bmp",
-	"image/gif",
-	"image/jpeg",
-	"image/png",
-	"image/webp",
-	"image/avif",
-	"text/plain",
-	"video/mp4",
-	"video/ogg",
-	"video/webm",
-];
+// Map of allowed mime types to their respecive default filenames
+// that will be rendered in browser without forcing them to be downloaded
+const inlineContentDispositionTypes = {
+	"application/ogg": "media.ogx",
+	"audio/midi": "audio.midi",
+	"audio/mpeg": "audio.mp3",
+	"audio/ogg": "audio.ogg",
+	"audio/vnd.wave": "audio.wav",
+	"audio/x-flac": "audio.flac",
+	"audio/x-m4a": "audio.m4a",
+	"image/bmp": "image.bmp",
+	"image/gif": "image.gif",
+	"image/jpeg": "image.jpg",
+	"image/png": "image.png",
+	"image/webp": "image.webp",
+	"image/avif": "image.avif",
+	"image/jxl": "image.jxl",
+	"text/plain": "text.txt",
+	"video/mp4": "video.mp4",
+	"video/ogg": "video.ogv",
+	"video/webm": "video.webm",
+};
 
 const uploadTokens = new Map();
 
@@ -82,7 +86,7 @@ class Uploader {
 		}
 
 		const folder = name.substring(0, 2);
-		const uploadPath = Helper.getFileUploadPath();
+		const uploadPath = Config.getFileUploadPath();
 		const filePath = path.join(uploadPath, folder, name);
 		let detectedMimeType = await Uploader.getFileType(filePath);
 
@@ -92,17 +96,34 @@ class Uploader {
 		}
 
 		// Force a download in the browser if it's not an allowed type (binary or otherwise unknown)
-		const contentDisposition = inlineContentDispositionTypes.includes(detectedMimeType)
-			? "inline"
-			: "attachment";
+		let slug = req.params.slug;
+		const isInline = detectedMimeType in inlineContentDispositionTypes;
+		let disposition = isInline ? "inline" : "attachment";
 
-		if (detectedMimeType === "audio/vnd.wave") {
-			// Send a more common mime type for wave audio files
-			// so that browsers can play them correctly
-			detectedMimeType = "audio/wav";
+		if (!slug && isInline) {
+			slug = inlineContentDispositionTypes[detectedMimeType];
 		}
 
-		res.setHeader("Content-Disposition", contentDisposition);
+		if (slug) {
+			disposition = contentDisposition(slug.trim(), {
+				fallback: false,
+				type: disposition,
+			});
+		}
+
+		// Send a more common mime type for audio files
+		// so that browsers can play them correctly
+		if (detectedMimeType === "audio/vnd.wave") {
+			detectedMimeType = "audio/wav";
+		} else if (detectedMimeType === "audio/x-flac") {
+			detectedMimeType = "audio/flac";
+		} else if (detectedMimeType === "audio/x-m4a") {
+			detectedMimeType = "audio/mp4";
+		} else if (detectedMimeType === "video/quicktime") {
+			detectedMimeType = "video/mp4";
+		}
+
+		res.setHeader("Content-Disposition", disposition);
 		res.setHeader("Cache-Control", "max-age=86400");
 		res.contentType(detectedMimeType);
 
@@ -186,7 +207,7 @@ class Uploader {
 		// that already exists on disk
 		do {
 			randomName = crypto.randomBytes(8).toString("hex");
-			destDir = path.join(Helper.getFileUploadPath(), randomName.substring(0, 2));
+			destDir = path.join(Config.getFileUploadPath(), randomName.substring(0, 2));
 			destPath = path.join(destDir, randomName);
 		} while (fs.existsSync(destPath));
 
@@ -207,8 +228,8 @@ class Uploader {
 		busboyInstance.on("file", (fieldname, fileStream, filename) => {
 			uploadUrl = `${randomName}/${encodeURIComponent(filename)}`;
 
-			if (Helper.config.fileUpload.baseUrl) {
-				uploadUrl = new URL(uploadUrl, Helper.config.fileUpload.baseUrl).toString();
+			if (Config.values.fileUpload.baseUrl) {
+				uploadUrl = new URL(uploadUrl, Config.values.fileUpload.baseUrl).toString();
 			} else {
 				uploadUrl = `uploads/${uploadUrl}`;
 			}
@@ -245,7 +266,7 @@ class Uploader {
 	}
 
 	static getMaxFileSize() {
-		const configOption = Helper.config.fileUpload.maxFileSize;
+		const configOption = Config.values.fileUpload.maxFileSize;
 
 		// Busboy uses Infinity to allow unlimited file size
 		if (configOption < 1) {

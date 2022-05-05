@@ -23,6 +23,7 @@
 					v-if="shouldDisplayDateMarker(message, id)"
 					:key="message.id + '-date'"
 					:message="message"
+					:focused="message.id == focused"
 				/>
 				<div
 					v-if="shouldDisplayUnreadMarker(message.id)"
@@ -38,6 +39,7 @@
 					:network="network"
 					:keep-scroll-position="keepScrollPosition"
 					:messages="message.messages"
+					:focused="message.id == focused"
 				/>
 				<Message
 					v-else
@@ -47,6 +49,7 @@
 					:message="message"
 					:keep-scroll-position="keepScrollPosition"
 					:is-previous-source="isPreviousSource(message, id)"
+					:focused="message.id == focused"
 					@toggle-link-preview="onLinkPreviewToggle"
 				/>
 			</template>
@@ -75,6 +78,7 @@ export default {
 	props: {
 		network: Object,
 		channel: Object,
+		focused: String,
 	},
 	computed: {
 		condensedMessages() {
@@ -134,7 +138,15 @@ export default {
 				}
 			}
 
-			return condensed;
+			return condensed.map((message) => {
+				// Skip condensing single messages, it doesn't save any
+				// space but makes useful information harder to see
+				if (message.type === "condensed" && message.messages.length === 1) {
+					return message.messages[0];
+				}
+
+				return message;
+			});
 		},
 	},
 	watch: {
