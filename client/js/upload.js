@@ -26,31 +26,36 @@ class Uploader {
 	}
 
 	dragOver(event) {
-		// Prevent dragover event completely and do nothing with it
-		// This stops the browser from trying to guess which cursor to show
-		event.preventDefault();
+		if (event.dataTransfer.types.includes("Files")) {
+			// Prevent dragover event completely and do nothing with it
+			// This stops the browser from trying to guess which cursor to show
+			event.preventDefault();
+		}
 	}
 
 	dragEnter(event) {
-		event.preventDefault();
-
 		// relatedTarget is the target where we entered the drag from
 		// when dragging from another window, the target is null, otherwise its a DOM element
 		if (!event.relatedTarget && event.dataTransfer.types.includes("Files")) {
+			event.preventDefault();
+
 			this.overlay.classList.add("is-dragover");
 		}
 	}
 
 	dragLeave(event) {
-		event.preventDefault();
-
 		// If relatedTarget is null, that means we are no longer dragging over the page
 		if (!event.relatedTarget) {
+			event.preventDefault();
 			this.overlay.classList.remove("is-dragover");
 		}
 	}
 
 	drop(event) {
+		if (!event.dataTransfer.types.includes("Files")) {
+			return;
+		}
+
 		event.preventDefault();
 		this.overlay.classList.remove("is-dragover");
 
@@ -141,7 +146,8 @@ class Uploader {
 		if (
 			store.state.settings.uploadCanvas &&
 			file.type.startsWith("image/") &&
-			!file.type.includes("svg")
+			!file.type.includes("svg") &&
+			file.type !== "image/gif"
 		) {
 			this.renderImage(file, (newFile) => this.performUpload(token, newFile));
 		} else {
@@ -202,7 +208,7 @@ class Uploader {
 					// if there is still data to be uploaded. Servers will only error in extreme cases like bad
 					// authentication or server-side errors.
 					response = {
-						error: `Upload aborted: HTTP ${this.xhr.status}`,
+						error: `Upload aborted: ${this.xhr.statusText} (HTTP ${this.xhr.status})`,
 					};
 				}
 

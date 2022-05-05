@@ -6,11 +6,13 @@
 					:src="`img/logo-${isPublic() ? 'horizontal-' : ''}transparent-bg.svg`"
 					class="logo"
 					alt="The Lounge"
+					role="presentation"
 				/>
 				<img
 					:src="`img/logo-${isPublic() ? 'horizontal-' : ''}transparent-bg-inverted.svg`"
 					class="logo-inverted"
 					alt="The Lounge"
+					role="presentation"
 				/>
 				<span
 					v-if="isDevelopment"
@@ -50,7 +52,7 @@
 					aria-label="Settings"
 					role="tab"
 					aria-controls="settings"
-					:aria-selected="$route.name === 'Settings'"
+					:aria-selected="$route.name === 'General'"
 			/></span>
 			<span
 				class="tooltipped tooltipped-n tooltipped-no-touch"
@@ -192,6 +194,9 @@ export default {
 		};
 
 		document.body.addEventListener("touchstart", this.onTouchStart, {passive: true});
+	},
+	destroyed() {
+		document.body.removeEventListener("touchstart", this.onTouchStart, {passive: true});
 	},
 	methods: {
 		isPublic: () => document.body.classList.contains("public"),

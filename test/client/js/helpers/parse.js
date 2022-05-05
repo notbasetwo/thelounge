@@ -45,8 +45,7 @@ describe("IRC formatted message parser", () => {
 	it("should skip all <32 ASCII codes except linefeed", async () => {
 		const testCases = [
 			{
-				input:
-					"\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0B\x0C\x0D\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1B\x1D\x1D\x1E\x1Ftext\x0Awithcontrolcodestest",
+				input: "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0B\x0C\x0D\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1B\x1D\x1D\x1E\x1Ftext\x0Awithcontrolcodestest",
 				expected:
 					' <span class="irc-bold">         </span> <span class="irc-monospace">           </span><span class="irc-underline irc-strikethrough irc-monospace">text\nwithcontrolcodestest</span>',
 			},
@@ -63,10 +62,10 @@ describe("IRC formatted message parser", () => {
 	it("should find urls", async () => {
 		const testCases = [
 			{
-				input: "irc://freenode.net/thelounge",
+				input: "irc://irc.example.com/thelounge",
 				expected:
-					'<a href="irc://freenode.net/thelounge" dir="auto" target="_blank" rel="noopener">' +
-					"irc://freenode.net/thelounge" +
+					'<a href="irc://irc.example.com/thelounge" dir="auto" target="_blank" rel="noopener">' +
+					"irc://irc.example.com/thelounge" +
 					"</a>",
 			},
 			{
@@ -416,12 +415,12 @@ describe("IRC formatted message parser", () => {
 	it("should go bonkers like mirc", async () => {
 		const testCases = [
 			{
-				input: "\x02irc\x0f://\x1dfreenode.net\x0f/\x034,8thelounge",
+				input: "\x02irc\x0f://\x1dirc.example.com\x0f/\x034,8thelounge",
 				expected:
-					'<a href="irc://freenode.net/thelounge" dir="auto" target="_blank" rel="noopener">' +
+					'<a href="irc://irc.example.com/thelounge" dir="auto" target="_blank" rel="noopener">' +
 					'<span class="irc-bold">irc</span>' +
 					"://" +
-					'<span class="irc-italic">freenode.net</span>' +
+					'<span class="irc-italic">irc.example.com</span>' +
 					"/" +
 					'<span class="irc-fg4 irc-bg8">thelounge</span>' +
 					"</a>",
@@ -521,8 +520,7 @@ describe("IRC formatted message parser", () => {
 	it("should optimize generated html", async () => {
 		const testCases = [
 			{
-				input:
-					'test \x0312#\x0312\x0312"te\x0312st\x0312\x0312\x0312\x0312\x0312\x0312\x0312\x0312\x0312\x0312\x0312a',
+				input: 'test \x0312#\x0312\x0312"te\x0312st\x0312\x0312\x0312\x0312\x0312\x0312\x0312\x0312\x0312\x0312\x0312a',
 				expected:
 					"test " +
 					'<span dir="auto" role="button" tabindex="0" class="inline-channel">' +

@@ -13,6 +13,7 @@
 			:aria-label="getInputPlaceholder(channel)"
 			@input="setPendingMessage"
 			@keypress.enter.exact.prevent="onSubmit"
+			@blur="onBlur"
 		/>
 		<span
 			v-if="$store.state.serverConfiguration.fileUpload"
@@ -140,18 +141,28 @@ export default {
 				return;
 			}
 
+			const onRow = (
+				this.$refs.input.value.slice(null, this.$refs.input.selectionStart).match(/\n/g) ||
+				[]
+			).length;
+			const totalRows = (this.$refs.input.value.match(/\n/g) || []).length;
+
 			const {channel} = this;
 
 			if (channel.inputHistoryPosition === 0) {
 				channel.inputHistory[channel.inputHistoryPosition] = channel.pendingMessage;
 			}
 
-			if (key === "up") {
+			if (key === "up" && onRow === 0) {
 				if (channel.inputHistoryPosition < channel.inputHistory.length - 1) {
 					channel.inputHistoryPosition++;
+				} else {
+					return;
 				}
-			} else if (channel.inputHistoryPosition > 0) {
+			} else if (key === "down" && channel.inputHistoryPosition > 0 && onRow === totalRows) {
 				channel.inputHistoryPosition--;
+			} else {
+				return;
 			}
 
 			channel.pendingMessage = channel.inputHistory[channel.inputHistoryPosition];
@@ -183,6 +194,10 @@ export default {
 		},
 		setInputSize() {
 			this.$nextTick(() => {
+				if (!this.$refs.input) {
+					return;
+				}
+
 				const style = window.getComputedStyle(this.$refs.input);
 				const lineHeight = parseFloat(style.lineHeight, 10) || 1;
 
@@ -264,6 +279,11 @@ export default {
 		},
 		blurInput() {
 			this.$refs.input.blur();
+		},
+		onBlur() {
+			if (autocompletionRef) {
+				autocompletionRef.hide();
+			}
 		},
 	},
 };

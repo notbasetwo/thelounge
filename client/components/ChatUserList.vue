@@ -1,5 +1,10 @@
 <template>
-	<aside ref="userlist" class="userlist" @mouseleave="removeHoverUser">
+	<aside
+		ref="userlist"
+		class="userlist"
+		:aria-label="'User list for ' + channel.name"
+		@mouseleave="removeHoverUser"
+	>
 		<div class="count">
 			<input
 				ref="input"
@@ -28,7 +33,7 @@
 				<template v-if="userSearchInput.length > 0">
 					<Username
 						v-for="user in users"
-						:key="user.original.nick"
+						:key="user.original.nick + '-search'"
 						:on-hover="hoverUser"
 						:active="user.original === activeUser"
 						:user="user.original"

@@ -1,5 +1,10 @@
 <template>
-	<Chat v-if="activeChannel" :network="activeChannel.network" :channel="activeChannel.channel" />
+	<Chat
+		v-if="activeChannel"
+		:network="activeChannel.network"
+		:channel="activeChannel.channel"
+		:focused="$route.query.focused"
+	/>
 </template>
 
 <script>

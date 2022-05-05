@@ -116,18 +116,31 @@ export function generateChannelContextMenu($root, channel, network) {
 
 	// Add menu items for queries
 	if (channel.type === "query") {
-		items.push({
-			label: "User information",
-			type: "item",
-			class: "action-whois",
-			action() {
-				$root.switchToChannel(channel);
-				socket.emit("input", {
-					target: channel.id,
-					text: "/whois " + channel.name,
-				});
+		items.push(
+			{
+				label: "User information",
+				type: "item",
+				class: "action-whois",
+				action() {
+					$root.switchToChannel(channel);
+					socket.emit("input", {
+						target: channel.id,
+						text: "/whois " + channel.name,
+					});
+				},
 			},
-		});
+			{
+				label: "Ignore user",
+				type: "item",
+				class: "action-ignore",
+				action() {
+					socket.emit("input", {
+						target: channel.id,
+						text: "/ignore " + channel.name,
+					});
+				},
+			}
+		);
 	}
 
 	if (channel.type === "channel" || channel.type === "query") {
@@ -157,6 +170,31 @@ export function generateChannelContextMenu($root, channel, network) {
 		});
 	}
 
+	const humanFriendlyChanTypeMap = {
+		lobby: "network",
+		channel: "channel",
+		query: "conversation",
+	};
+
+	// We don't allow the muting of Chan.Type.SPECIAL channels
+	const mutableChanTypes = Object.keys(humanFriendlyChanTypeMap);
+
+	if (mutableChanTypes.includes(channel.type)) {
+		const chanType = humanFriendlyChanTypeMap[channel.type];
+
+		items.push({
+			label: channel.muted ? `Unmute ${chanType}` : `Mute ${chanType}`,
+			type: "item",
+			class: "mute",
+			action() {
+				socket.emit("mute:change", {
+					target: channel.id,
+					setMutedTo: !channel.muted,
+				});
+			},
+		});
+	}
+
 	// Add close menu item
 	items.push({
 		label: closeMap[channel.type],
@@ -170,12 +208,50 @@ export function generateChannelContextMenu($root, channel, network) {
 	return items;
 }
 
+export function generateInlineChannelContextMenu($root, chan, network) {
+	const join = () => {
+		const channel = network.channels.find((c) => c.name === chan);
+
+		if (channel) {
+			$root.switchToChannel(channel);
+		}
+
+		socket.emit("input", {
+			target: $root.$store.state.activeChannel.channel.id,
+			text: "/join " + chan,
+		});
+	};
+
+	const channel = network.channels.find((c) => c.name === chan);
+
+	if (channel) {
+		return [
+			{
+				label: "Go to channel",
+				type: "item",
+				class: "chan",
+				link: `/chan-${channel.id}`,
+			},
+		];
+	}
+
+	return [
+		{
+			label: "Join channel",
+			type: "item",
+			class: "join",
+			action: join,
+		},
+	];
+}
+
 export function generateUserContextMenu($root, channel, network, user) {
-	const currentChannelUser = channel.users.find((u) => u.nick === network.nick) || {};
-	const currentChannelModes = currentChannelUser.modes || [];
+	const currentChannelUser = channel
+		? channel.users.find((u) => u.nick === network.nick) || {}
+		: {};
 
 	const whois = () => {
-		const chan = $root.$store.getters.findChannelOnCurrentNetwork(user.nick);
+		const chan = network.channels.find((c) => c.name === user.nick);
 
 		if (chan) {
 			$root.switchToChannel(chan);
@@ -204,6 +280,17 @@ export function generateUserContextMenu($root, channel, network, user) {
 			action: whois,
 		},
 		{
+			label: "Ignore user",
+			type: "item",
+			class: "action-ignore",
+			action() {
+				socket.emit("input", {
+					target: channel.id,
+					text: "/ignore " + user.nick,
+				});
+			},
+		},
+		{
 			label: "Direct messages",
 			type: "item",
 			class: "action-query",
@@ -222,66 +309,101 @@ export function generateUserContextMenu($root, channel, network, user) {
 		},
 	];
 
-	if (currentChannelModes.includes("@")) {
-		items.push({
-			label: "Kick",
-			type: "item",
-			class: "action-kick",
-			action() {
-				socket.emit("input", {
-					target: channel.id,
-					text: "/kick " + user.nick,
-				});
-			},
-		});
+	// Bail because we're in a query or we don't have a special mode.
+	if (!currentChannelUser.modes || currentChannelUser.modes.length < 1) {
+		return items;
+	}
 
-		if (user.modes.includes("@")) {
+	// Names of the standard modes we are able to change
+	const modeCharToName = {
+		"~": "owner",
+		"&": "admin",
+		"@": "operator",
+		"%": "half-op",
+		"+": "voice",
+	};
+
+	// Labels for the mode changes.  For example .rev({mode: "a", symbol: "&"}) => 'Revoke admin (-a)'
+	const modeTextTemplate = {
+		revoke(m) {
+			const name = modeCharToName[m.symbol];
+			const res = name ? `Revoke ${name} (-${m.mode})` : `Mode -${m.mode}`;
+			return res;
+		},
+		give(m) {
+			const name = modeCharToName[m.symbol];
+			const res = name ? `Give ${name} (+${m.mode})` : `Mode +${m.mode}`;
+			return res;
+		},
+	};
+
+	const networkModeSymbols = network.serverOptions.PREFIX.symbols;
+
+	/**
+	 * Determine whether the prefix of mode p1 has access to perform actions on p2.
+	 *
+	 * EXAMPLE:
+	 *    compare('@', '@') => true
+	 *    compare('&', '@') => true
+	 *    compare('+', '~') => false
+	 * @param {string} p1 The mode performing an action
+	 * @param {string} p2 The target mode
+	 *
+	 * @return {boolean} whether p1 can perform an action on p2
+	 */
+	function compare(p1, p2) {
+		// The modes ~ and @ can perform actions on their own mode.  The others on modes below.
+		return "~@".indexOf(p1) > -1
+			? networkModeSymbols.indexOf(p1) <= networkModeSymbols.indexOf(p2)
+			: networkModeSymbols.indexOf(p1) < networkModeSymbols.indexOf(p2);
+	}
+
+	network.serverOptions.PREFIX.prefix.forEach((mode) => {
+		if (!compare(currentChannelUser.modes[0], mode.symbol)) {
+			// Our highest mode is below the current mode.  Bail.
+			return;
+		}
+
+		if (!user.modes.includes(mode.symbol)) {
+			// The target doesn't already have this mode, therefore we can set it.
 			items.push({
-				label: "Revoke operator (-o)",
+				label: modeTextTemplate.give(mode),
 				type: "item",
-				class: "action-op",
+				class: "action-set-mode",
 				action() {
 					socket.emit("input", {
 						target: channel.id,
-						text: "/deop " + user.nick,
+						text: "/mode +" + mode.mode + " " + user.nick,
 					});
 				},
 			});
 		} else {
 			items.push({
-				label: "Give operator (+o)",
+				label: modeTextTemplate.revoke(mode),
 				type: "item",
-				class: "action-op",
+				class: "action-revoke-mode",
 				action() {
 					socket.emit("input", {
 						target: channel.id,
-						text: "/op " + user.nick,
+						text: "/mode -" + mode.mode + " " + user.nick,
 					});
 				},
 			});
 		}
+	});
 
-		if (user.modes.includes("+")) {
+	// Determine if we are half-op or op depending on the network modes so we can kick.
+	if (!compare(networkModeSymbols.indexOf("%") > -1 ? "%" : "@", currentChannelUser.modes[0])) {
+		// Check if the target user has no mode or a mode lower than ours.
+		if (user.modes.length === 0 || compare(currentChannelUser.modes[0], user.modes[0])) {
 			items.push({
-				label: "Revoke voice (-v)",
+				label: "Kick",
 				type: "item",
-				class: "action-voice",
+				class: "action-kick",
 				action() {
 					socket.emit("input", {
 						target: channel.id,
-						text: "/devoice " + user.nick,
-					});
-				},
-			});
-		} else {
-			items.push({
-				label: "Give voice (+v)",
-				type: "item",
-				class: "action-voice",
-				action() {
-					socket.emit("input", {
-						target: channel.id,
-						text: "/voice " + user.nick,
+						text: "/kick " + user.nick,
 					});
 				},
 			});

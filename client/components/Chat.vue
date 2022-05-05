@@ -18,7 +18,9 @@
 			>
 				<div class="header">
 					<SidebarToggle />
-					<span class="title">{{ channel.name }}</span>
+					<span class="title" :aria-label="'Currently open ' + channel.type">{{
+						channel.name
+					}}</span>
 					<div v-if="channel.editTopic === true" class="topic-container">
 						<input
 							ref="topicInput"
@@ -33,12 +35,24 @@
 							<span type="button" aria-label="Save topic"></span>
 						</span>
 					</div>
-					<span v-else :title="channel.topic" class="topic" @dblclick="editTopic"
+					<span
+						v-else
+						:title="channel.topic"
+						:class="{topic: true, empty: !channel.topic}"
+						@dblclick="editTopic"
 						><ParsedMessage
 							v-if="channel.topic"
 							:network="network"
 							:text="channel.topic"
 					/></span>
+					<MessageSearchForm
+						v-if="
+							$store.state.settings.searchEnabled &&
+							['channel', 'query'].includes(channel.type)
+						"
+						:network="network"
+						:channel="channel"
+					/>
 					<button
 						class="mentions"
 						aria-label="Open your mentions"
@@ -85,17 +99,22 @@
 					>
 						<div class="scroll-down-arrow" />
 					</div>
-					<MessageList ref="messageList" :network="network" :channel="channel" />
 					<ChatUserList v-if="channel.type === 'channel'" :channel="channel" />
+					<MessageList
+						ref="messageList"
+						:network="network"
+						:channel="channel"
+						:focused="focused"
+					/>
 				</div>
 			</div>
 		</div>
 		<div
-			v-if="this.$store.state.currentUserVisibleError"
+			v-if="$store.state.currentUserVisibleError"
 			id="user-visible-error"
 			@click="hideUserVisibleError"
 		>
-			{{ this.$store.state.currentUserVisibleError }}
+			{{ $store.state.currentUserVisibleError }}
 		</div>
 		<ChatInput :network="network" :channel="channel" />
 	</div>
@@ -109,6 +128,7 @@ import MessageList from "./MessageList.vue";
 import ChatInput from "./ChatInput.vue";
 import ChatUserList from "./ChatUserList.vue";
 import SidebarToggle from "./SidebarToggle.vue";
+import MessageSearchForm from "./MessageSearchForm.vue";
 import ListBans from "./Special/ListBans.vue";
 import ListInvites from "./Special/ListInvites.vue";
 import ListChannels from "./Special/ListChannels.vue";
@@ -122,10 +142,12 @@ export default {
 		ChatInput,
 		ChatUserList,
 		SidebarToggle,
+		MessageSearchForm,
 	},
 	props: {
 		network: Object,
 		channel: Object,
+		focused: String,
 	},
 	computed: {
 		specialComponent() {
@@ -205,7 +227,7 @@ export default {
 				network: this.network,
 			});
 		},
-		openMentions() {
+		openMentions(event) {
 			eventbus.emit("mentions:toggle", {
 				event: event,
 			});

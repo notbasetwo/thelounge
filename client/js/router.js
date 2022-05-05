@@ -13,8 +13,14 @@ import Settings from "../components/Windows/Settings.vue";
 import Help from "../components/Windows/Help.vue";
 import Changelog from "../components/Windows/Changelog.vue";
 import NetworkEdit from "../components/Windows/NetworkEdit.vue";
+import SearchResults from "../components/Windows/SearchResults.vue";
 import RoutedChat from "../components/RoutedChat.vue";
 import store from "./store";
+
+import AppearanceSettings from "../components/Settings/Appearance.vue";
+import GeneralSettings from "../components/Settings/General.vue";
+import AccountSettings from "../components/Settings/Account.vue";
+import NotificationSettings from "../components/Settings/Notifications.vue";
 
 const router = new VueRouter({
 	routes: [
@@ -39,9 +45,30 @@ const router = new VueRouter({
 			props: (route) => ({queryParams: route.query}),
 		},
 		{
-			name: "Settings",
 			path: "/settings",
 			component: Settings,
+			children: [
+				{
+					name: "General",
+					path: "",
+					component: GeneralSettings,
+				},
+				{
+					name: "Appearance",
+					path: "appearance",
+					component: AppearanceSettings,
+				},
+				{
+					name: "Account",
+					path: "account",
+					component: AccountSettings,
+				},
+				{
+					name: "Notifications",
+					path: "notifications",
+					component: NotificationSettings,
+				},
+			],
 		},
 		{
 			name: "Help",
@@ -62,6 +89,11 @@ const router = new VueRouter({
 			name: "RoutedChat",
 			path: "/chan-:id",
 			component: RoutedChat,
+		},
+		{
+			name: "SearchResults",
+			path: "/chan-:id/search",
+			component: SearchResults,
 		},
 	],
 });

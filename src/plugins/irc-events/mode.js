@@ -39,6 +39,18 @@ module.exports = function (irc, network) {
 		targetChan.pushMessage(client, msg);
 	});
 
+	irc.on("user info", function (data) {
+		const serverChan = network.channels[0];
+
+		const msg = new Msg({
+			type: Msg.Type.MODE_USER,
+			raw_modes: data.raw_modes,
+			self: false,
+			showInActive: true,
+		});
+		serverChan.pushMessage(client, msg);
+	});
+
 	irc.on("mode", function (data) {
 		let targetChan;
 
@@ -107,7 +119,7 @@ module.exports = function (irc, network) {
 				return;
 			}
 
-			const changedMode = network.prefixLookup[char];
+			const changedMode = network.serverOptions.PREFIX.modeToSymbol[char];
 
 			if (!add) {
 				_.pull(user.modes, changedMode);

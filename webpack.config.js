@@ -1,11 +1,13 @@
 "use strict";
 
 const webpack = require("webpack");
+const fs = require("fs");
 const path = require("path");
 const CopyPlugin = require("copy-webpack-plugin");
 const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 const VueLoaderPlugin = require("vue-loader/lib/plugin");
 const Helper = require("./src/helper.js");
+const babelConfig = require("./babel.config.cjs");
 
 const isProduction = process.env.NODE_ENV === "production";
 const config = {
@@ -65,9 +67,7 @@ const config = {
 				include: [path.resolve(__dirname, "client")],
 				use: {
 					loader: "babel-loader",
-					options: {
-						presets: [["@babel/env"]],
-					},
+					options: babelConfig,
 				},
 			},
 		],
@@ -94,24 +94,23 @@ const config = {
 		new CopyPlugin({
 			patterns: [
 				{
-					from:
-						"./node_modules/@fortawesome/fontawesome-free/webfonts/fa-solid-900.woff*",
-					to: "fonts/[name].[ext]",
+					from: "./node_modules/@fortawesome/fontawesome-free/webfonts/fa-solid-900.woff*",
+					to: "fonts/[name][ext]",
 				},
 				{
 					from: "./client/js/loading-error-handlers.js",
-					to: "js/[name].[ext]",
+					to: "js/[name][ext]",
 				},
 				{
 					from: "./client/*",
-					to: "[name].[ext]",
+					to: "[name][ext]",
 					globOptions: {
 						ignore: ["**/index.html.tpl", "**/service-worker.js"],
 					},
 				},
 				{
 					from: "./client/service-worker.js",
-					to: "[name].[ext]",
+					to: "[name][ext]",
 					transform(content) {
 						return content
 							.toString()
@@ -123,15 +122,15 @@ const config = {
 				},
 				{
 					from: "./client/audio/*",
-					to: "audio/[name].[ext]",
+					to: "audio/[name][ext]",
 				},
 				{
 					from: "./client/img/*",
-					to: "img/[name].[ext]",
+					to: "img/[name][ext]",
 				},
 				{
 					from: "./client/themes/*",
-					to: "themes/[name].[ext]",
+					to: "themes/[name][ext]",
 				},
 			],
 		}),
@@ -143,4 +142,52 @@ const config = {
 	],
 };
 
-module.exports = config;
+module.exports = (env, argv) => {
+	if (argv.mode === "development") {
+		const testFile = path.resolve(__dirname, "test/public/testclient.js");
+
+		if (fs.existsSync(testFile)) {
+			fs.unlinkSync(testFile);
+		}
+
+		config.target = "node";
+		config.devtool = "eval";
+		config.stats = "errors-only";
+		config.output.path = path.resolve(__dirname, "test/public");
+		config.entry = {
+			"testclient.js": [path.resolve(__dirname, "test/client/index.js")],
+		};
+
+		// Add the istanbul plugin to babel-loader options
+		for (const rule of config.module.rules) {
+			if (rule.use.loader === "babel-loader") {
+				rule.use.options.plugins = ["istanbul"];
+			}
+		}
+
+		// `optimization.splitChunks` is incompatible with a `target` of `node`. See:
+		// - https://github.com/zinserjan/mocha-webpack/issues/84
+		// - https://github.com/webpack/webpack/issues/6727#issuecomment-372589122
+		config.optimization.splitChunks = false;
+
+		// Disable plugins like copy files, it is not required
+		config.plugins = [
+			new VueLoaderPlugin(),
+
+			// Client tests that require Vue may end up requireing socket.io
+			new webpack.NormalModuleReplacementPlugin(
+				/js(\/|\\)socket\.js/,
+				path.resolve(__dirname, "scripts/noop.js")
+			),
+
+			// "Fixes" Critical dependency: the request of a dependency is an expression
+			new webpack.ContextReplacementPlugin(/vue-server-renderer$/),
+		];
+	}
+
+	if (argv.mode === "production") {
+		// ...
+	}
+
+	return config;
+};

@@ -1,4 +1,4 @@
-const clientSideCommands = ["/collapse", "/expand"];
+const clientSideCommands = ["/collapse", "/expand", "/search"];
 
 const passThroughCommands = [
 	"/as",
@@ -35,6 +35,7 @@ const userInputs = [
 	"rejoin",
 	"topic",
 	"whois",
+	"mute",
 ].reduce(function (plugins, name) {
 	const plugin = require(`./${name}`);
 	plugin.commands.forEach((command) => plugins.set(command, plugin));

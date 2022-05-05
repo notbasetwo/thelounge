@@ -2,7 +2,7 @@
 
 const _ = require("lodash");
 const log = require("../log");
-const Helper = require("../helper");
+const Config = require("../config");
 const User = require("./user");
 const Msg = require("./msg");
 const storage = require("../plugins/storage");
@@ -41,6 +41,7 @@ function Chan(attr) {
 		unread: 0,
 		highlight: 0,
 		users: new Map(),
+		muted: false,
 	});
 }
 
@@ -80,7 +81,7 @@ Chan.prototype.pushMessage = function (client, msg, increasesUnread) {
 
 	// Never store messages in public mode as the session
 	// is completely destroyed when the page gets closed
-	if (Helper.config.public) {
+	if (Config.values.public) {
 		return;
 	}
 
@@ -91,19 +92,19 @@ Chan.prototype.pushMessage = function (client, msg, increasesUnread) {
 
 	this.writeUserLog(client, msg);
 
-	if (Helper.config.maxHistory >= 0 && this.messages.length > Helper.config.maxHistory) {
-		const deleted = this.messages.splice(0, this.messages.length - Helper.config.maxHistory);
+	if (Config.values.maxHistory >= 0 && this.messages.length > Config.values.maxHistory) {
+		const deleted = this.messages.splice(0, this.messages.length - Config.values.maxHistory);
 
 		// If maxHistory is 0, image would be dereferenced before client had a chance to retrieve it,
 		// so for now, just don't implement dereferencing for this edge case.
-		if (Helper.config.maxHistory > 0) {
+		if (Config.values.maxHistory > 0) {
 			this.dereferencePreviews(deleted);
 		}
 	}
 };
 
 Chan.prototype.dereferencePreviews = function (messages) {
-	if (!Helper.config.prefetch || !Helper.config.prefetchStorage) {
+	if (!Config.values.prefetch || !Config.values.prefetchStorage) {
 		return;
 	}
 
@@ -240,13 +241,25 @@ Chan.prototype.loadMessages = function (client, network) {
 		return;
 	}
 
-	const messageStorage = client.messageStorage.find((s) => s.canProvideMessages());
-
-	if (!messageStorage) {
+	if (!network.irc) {
+		// Network created, but misconfigured
+		log.warn(
+			`Failed to load messages for ${client.name}, network ${network.name} is not initialized.`
+		);
 		return;
 	}
 
-	messageStorage
+	if (!client.messageProvider) {
+		if (network.irc.network.cap.isEnabled("znc.in/playback")) {
+			// if we do have a message provider we might be able to only fetch partial history,
+			// so delay the cap in this case.
+			requestZncPlayback(this, network, 0);
+		}
+
+		return;
+	}
+
+	client.messageProvider
 		.getMessages(network, this)
 		.then((messages) => {
 			if (messages.length === 0) {
@@ -275,11 +288,15 @@ Chan.prototype.loadMessages = function (client, network) {
 				requestZncPlayback(this, network, from);
 			}
 		})
-		.catch((err) => log.error(`Failed to load messages: ${err}`));
+		.catch((err) => log.error(`Failed to load messages for ${client.name}: ${err}`));
 };
 
 Chan.prototype.isLoggable = function () {
 	return this.type === Chan.Type.CHANNEL || this.type === Chan.Type.QUERY;
+};
+
+Chan.prototype.setMuteStatus = function (muted) {
+	this.muted = !!muted;
 };
 
 function requestZncPlayback(channel, network, from) {

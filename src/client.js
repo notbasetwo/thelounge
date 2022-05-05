@@ -7,7 +7,7 @@ const Chan = require("./models/chan");
 const crypto = require("crypto");
 const Msg = require("./models/msg");
 const Network = require("./models/network");
-const Helper = require("./helper");
+const Config = require("./config");
 const UAParser = require("ua-parser-js");
 const {v4: uuidv4} = require("uuid");
 const escapeRegExp = require("lodash/escapeRegExp");
@@ -33,6 +33,7 @@ const events = [
 	"invite",
 	"join",
 	"kick",
+	"list",
 	"mode",
 	"modelist",
 	"motd",
@@ -41,9 +42,9 @@ const events = [
 	"nick",
 	"part",
 	"quit",
+	"sasl",
 	"topic",
 	"welcome",
-	"list",
 	"whois",
 ];
 
@@ -63,6 +64,7 @@ function Client(manager, name, config = {}) {
 		messageStorage: [],
 		highlightRegex: null,
 		highlightExceptionRegex: null,
+		messageProvider: undefined,
 	});
 
 	const client = this;
@@ -70,12 +72,13 @@ function Client(manager, name, config = {}) {
 	client.config.log = Boolean(client.config.log);
 	client.config.password = String(client.config.password);
 
-	if (!Helper.config.public && client.config.log) {
-		if (Helper.config.messageStorage.includes("sqlite")) {
-			client.messageStorage.push(new MessageStorage(client));
+	if (!Config.values.public && client.config.log) {
+		if (Config.values.messageStorage.includes("sqlite")) {
+			client.messageProvider = new MessageStorage(client);
+			client.messageStorage.push(client.messageProvider);
 		}
 
-		if (Helper.config.messageStorage.includes("text")) {
+		if (Config.values.messageStorage.includes("text")) {
 			client.messageStorage.push(new TextFileMessageStorage(client));
 		}
 
@@ -105,6 +108,8 @@ function Client(manager, name, config = {}) {
 	if (client.config.clientSettings.awayMessage) {
 		client.awayMessage = client.config.clientSettings.awayMessage;
 	}
+
+	client.config.clientSettings.searchEnabled = client.messageProvider !== undefined;
 
 	client.compileCustomHighlights();
 
@@ -197,6 +202,7 @@ Client.prototype.connect = function (args, isStartup = false) {
 					name: chan.name,
 					key: chan.key || "",
 					type: chan.type,
+					muted: chan.muted,
 				})
 			);
 		});
@@ -230,7 +236,7 @@ Client.prototype.connect = function (args, isStartup = false) {
 	const network = new Network({
 		uuid: args.uuid,
 		name: String(
-			args.name || (Helper.config.lockNetwork ? Helper.config.defaults.name : "") || ""
+			args.name || (Config.values.lockNetwork ? Config.values.defaults.name : "") || ""
 		),
 		host: String(args.host || ""),
 		port: parseInt(args.port, 10),
@@ -241,12 +247,19 @@ Client.prototype.connect = function (args, isStartup = false) {
 		nick: String(args.nick || ""),
 		username: String("taweb"),
 		realname: String(args.nick || ""),
+		leaveMessage: String("Quit - TransAdvice.org"),
 		sasl: String(args.sasl || ""),
 		saslAccount: String(args.saslAccount || ""),
 		saslPassword: String(args.saslPassword || ""),
 		commands: args.commands || [],
 		channels: channels,
 		ignoreList: args.ignoreList ? args.ignoreList : [],
+
+		proxyEnabled: !!args.proxyEnabled,
+		proxyHost: String(args.proxyHost || ""),
+		proxyPort: parseInt(args.proxyPort, 10),
+		proxyUsername: String(args.proxyUsername || ""),
+		proxyPassword: String(args.proxyPassword || ""),
 	});
 
 	// Set network lobby channel id
@@ -271,8 +284,7 @@ Client.prototype.connect = function (args, isStartup = false) {
 		network.channels[0].pushMessage(
 			client,
 			new Msg({
-				text:
-					"You have manually disconnected from this network before, use the /connect command to connect again.",
+				text: "You have manually disconnected from this network before, use the /connect command to connect again.",
 			}),
 			true
 		);
@@ -533,6 +545,14 @@ Client.prototype.clearHistory = function (data) {
 	}
 };
 
+Client.prototype.search = function (query) {
+	if (this.messageProvider === undefined) {
+		return Promise.resolve([]);
+	}
+
+	return this.messageProvider.search(query);
+};
+
 Client.prototype.open = function (socketId, target) {
 	// Due to how socket.io works internally, normal events may arrive later than
 	// the disconnect event, and because we can't control this timing precisely,
@@ -630,13 +650,24 @@ Client.prototype.names = function (data) {
 	});
 };
 
+Client.prototype.part = function (network, chan) {
+	const client = this;
+	network.channels = _.without(network.channels, chan);
+	client.mentions = client.mentions.filter((msg) => !(msg.chanId === chan.id));
+	chan.destroy();
+	client.save();
+	client.emit("part", {
+		chan: chan.id,
+	});
+};
+
 Client.prototype.quit = function (signOut) {
 	const sockets = this.manager.sockets.sockets;
-	const room = sockets.adapter.rooms[this.id];
+	const room = sockets.adapter.rooms.get(this.id);
 
-	if (room && room.sockets) {
-		for (const user in room.sockets) {
-			const socket = sockets.connected[user];
+	if (room) {
+		for (const user of room) {
+			const socket = sockets.sockets.get(user);
 
 			if (socket) {
 				if (signOut) {
@@ -649,7 +680,7 @@ Client.prototype.quit = function (signOut) {
 	}
 
 	this.networks.forEach((network) => {
-		network.quit(Helper.config.leaveMessage);
+		network.quit();
 		network.destroy();
 	});
 
@@ -728,7 +759,7 @@ Client.prototype.unregisterPushSubscription = function (token) {
 
 Client.prototype.save = _.debounce(
 	function SaveClient() {
-		if (Helper.config.public) {
+		if (Config.values.public) {
 			return;
 		}
 
